@@ -46,7 +46,7 @@
 
 (defun import-exists (class-name)
   (string-match
-   (concat "^import .*" class-name "$")
+   (concat "^import .*\\." class-name "$")
    (buffer-substring-no-properties 1 (point))))
 
 (defun add-import (&optional package class)
@@ -57,7 +57,7 @@
         (init-marker (make-marker)))
     (set-marker init-marker (point))
     (while (progn
-             (message "Searching for %s" (s-join "." package-list))
+             ;; (message "Searching for %s" (s-join "." package-list))
              (setq import-start (string-match
                                  (concat "^import " (s-join "." package-list))
                                  (buffer-substring-no-properties 1 (point))))
