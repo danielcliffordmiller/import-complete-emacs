@@ -4,6 +4,7 @@
 (require 'json)
 (require 'magit)
 (require 'popup)
+(require 's)
 
 (setq import-tag-file-name "java-classes-tags.json")
 
@@ -15,7 +16,7 @@
   (let* ((project-dir
           (replace-regexp-in-string
            (expand-file-name "~") "~"
-           (file-name-directory (directory-file-name (magit-git-dir)))))
+           (magit-toplevel)))
          (hash-result (gethash project-dir tags-hash-table))
          (tags-alist
           (if hash-result
@@ -24,43 +25,29 @@
               (puthash project-dir read-tags tags-hash-table)
               read-tags))))
     
-    (alist-get class-name tags-alist)))
+    (alist-get (intern class-name) tags-alist)))
 
-(defun select-package (class-symbol)
+(defun select-package (class-name)
   "function command to select package from class symbol"
-  (let ((package-names (get-class-package-seq class-symbol)))
-    (cond ((import-exists class-symbol)
-        )
-          ((> (length package-names) 1)
+  (let ((package-names (get-class-package-seq class-name)))
+    (cond ((> (length package-names) 1)
            (popup-menu* (concatenate 'list package-names)))
           ((= (length package-names) 1)
            (elt package-names 0))
-          (t (progn (message "\"%s\" could not be found in tag file" class-symbol) nil)))))
+          (t (progn (message "\"%s\" could not be found in tag file" class-name) nil)))))
 
 (defun import-class ()
   (interactive)
-  (let ((class-symbol (symbol-at-point)))
-    (if (import-exists class-symbol)
-        (message "import already exists for \"%s\"" class-symbol)
-      (let ((selected-package (select-package class-symbol)))
-        (if selected-package (add-import selected-package (symbol-name class-symbol)))))))
+  (let ((class-name (word-at-point)))
+    (if (import-exists class-name)
+        (message "import already exists for \"%s\"" class-name)
+      (let ((selected-package (select-package class-name)))
+        (if selected-package (add-import selected-package class-name))))))
 
-(defun import-exists (class-symbol)
+(defun import-exists (class-name)
   (string-match
-   (concat "^import .*" (symbol-name class-symbol) "$")
+   (concat "^import .*" class-name "$")
    (buffer-substring-no-properties 1 (point))))
-
-(defmacro join-to-string (list-of-strings &optional character)
-  "join a list of strings together with the optinal joining character"
-  (if (not character) (setq character ""))
-  (let ((strings (gensym)))
-    `(let ((,strings ,list-of-strings))
-       (if ,strings
-           (reduce
-            (lambda (a b) (concat a ,character b))
-            (seq-subseq ,strings 1)
-            :initial-value (first ,strings))
-         ""))))
 
 (defun add-import (&optional package class)
   (let ((package-point
@@ -70,9 +57,9 @@
         (init-marker (make-marker)))
     (set-marker init-marker (point))
     (while (progn
-             (message "Searching for %s" (join-to-string package-list "."))
+             (message "Searching for %s" (s-join "." package-list))
              (setq import-start (string-match
-                                 (concat "^import " (join-to-string package-list "."))
+                                 (concat "^import " (s-join "." package-list))
                                  (buffer-substring-no-properties 1 (point))))
              (if (not import-start)
                  (setq package-list (butlast package-list)))))
@@ -80,7 +67,7 @@
     (if import-start
         (progn
           (goto-char import-start)
-          (insert (concat "\nimport " (join-to-string (list package class) ".")))
+          (insert (concat "\nimport " (s-join "." (list package class))))
           (backward-paragraph)
           (let ((start-of-paragraph (point)))
             (forward-paragraph)
@@ -89,6 +76,6 @@
         (goto-char package-point)
         (next-line)
         (newline)
-        (insert (concat "import " (join-to-string (list package class) ".") "\n"))))
+        (insert (concat "import " (s-join "." (list package class)) "\n"))))
     (goto-char init-marker)
     (set-marker init-marker nil)))
