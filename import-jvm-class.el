@@ -4,34 +4,36 @@
 (require 'json)
 (require 'magit)
 (require 'popup)
+(require 'thingatpt)
 (require 's)
+(require 'sqlite3)
 
-(setq import-tag-file-name "java-classes-tags.json")
+;(setq import-tag-file-name "java-classes-tags.json")
+(setq import-tag-database (concat (file-name-directory (or load-file-name buffer-file-name)) "jvm-classes.data"))
+(setq *import-tag-dbh* (sqlite3-open import-tag-database sqlite-open-readonly))
+(setq *import-tag-sth* (sqlite3-prepare *import-tag-dbh* "select pa.name from projects pr join project_package_class ppc on ppc.project_id = pr.id join packages pa on pa.id = ppc.package_id join classes cl on cl.id = ppc.class_id where pr.path = ? and cl.name = ?"))
 
 (if (not (boundp 'tags-hash-table))
     (setq tags-hash-table (make-hash-table :test 'equal)))
 
 (defun get-class-package-seq (class-name)
-  "reads the current git directory and looks up the dictionary list for the symbol under the point"
-  (let* ((project-dir
-          (replace-regexp-in-string
-           (expand-file-name "~") "~"
-           (magit-toplevel)))
-         (hash-result (gethash project-dir tags-hash-table))
-         (tags-alist
-          (if hash-result
-              hash-result
-            (let ((read-tags (json-read-file (concat project-dir import-tag-file-name))))
-              (puthash project-dir read-tags tags-hash-table)
-              read-tags))))
-    
-    (alist-get (intern class-name) tags-alist)))
+  "reads the current project directory (git) and queries sqlite db for class packages"
+  (let ((project-dir
+         (replace-regexp-in-string
+          (expand-file-name "~") "~"
+          (magit-toplevel)))
+        (packages '()))
+    (sqlite3-bind-multi *import-tag-sth* project-dir class-name)
+    (while (= sqlite-row (sqlite3-step *import-tag-sth*))
+      (add-to-list 'packages (car (sqlite3-fetch *import-tag-sth*))))
+    (sqlite3-reset *import-tag-sth*)
+    packages))
 
 (defun select-package (class-name)
   "function command to select package from class symbol"
   (let ((package-names (get-class-package-seq class-name)))
     (cond ((> (length package-names) 1)
-           (popup-menu* (concatenate 'list package-names)))
+           (popup-menu* package-names))
           ((= (length package-names) 1)
            (elt package-names 0))
           (t (progn (message "\"%s\" could not be found in tag file" class-name) nil)))))
@@ -79,3 +81,6 @@
         (insert (concat "import " (s-join "." (list package class)) "\n"))))
     (goto-char init-marker)
     (set-marker init-marker nil)))
+
+;(provide 'import-jvm-class)
+
